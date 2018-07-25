@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using ClusterManager.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Primitives;
+using Microsoft.Net.Http.Headers;
 using Nethereum.KeyStore;
 using Nethereum.Signer;
 using Newtonsoft.Json.Linq;
@@ -20,9 +23,9 @@ namespace ClusterManager.Controllers
         public static string JsonConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"genesis.json");
         private static Random Random = new Random();
         
-
+        [HttpGet]
         [HttpPost]
-        public string CreateGenesis() {
+        public IActionResult CreateGenesis() {
             var json = System.IO.File.ReadAllText(JsonConfigPath);
             dynamic jobj = JObject.Parse(json);
 
@@ -50,8 +53,25 @@ namespace ClusterManager.Controllers
                         )
                 );
 
+            using (var ms = new MemoryStream()) {
+                var zip = new ZipArchive(ms,ZipArchiveMode.Create);
 
-            return jobj.ToString();
+                foreach (var jsonAccount in accounts) {
+                    var entry = zip.CreateEntry($"accounts\\{jsonAccount.Address}.json", CompressionLevel.Optimal);
+                    using (var sw = new StreamWriter(entry.Open())) {
+                        sw.Write(jsonAccount.Json);
+                    }
+
+                    var pass = zip.CreateEntry($"accounts\\{jsonAccount.Address}_pass.txt");
+                    using (var sw = new StreamWriter(pass.Open())) {
+                        sw.Write(jsonAccount.Password);
+                    }
+                }
+
+                return new FileContentResult(ms.ToArray(),"application/zip") {
+                    FileDownloadName = "Genesis.zip"
+                };
+            }
         }
         
         private static long GetUnixTime()
